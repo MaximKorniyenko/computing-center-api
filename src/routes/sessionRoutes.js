@@ -1,5 +1,5 @@
 const express = require('express');
-const sessionController = require('../controllers/sessionController.js');
+const { sessionController } = require('../container');
 const { isAuthenticated, hasRole } = require('../middlewares/authMiddleware');
 
 const router = express.Router();

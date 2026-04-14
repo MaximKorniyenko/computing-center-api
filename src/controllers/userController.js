@@ -1,20 +1,22 @@
-const {getNUsers, registerUsr, getUserById, updateUser, deleteUser} = require('../services/userService.js');
-const { logAction } = require('../services/loggerService');
+class UserController {
+    constructor(userService, loggerService) {
+        this.userService = userService;
+        this.loggerService = loggerService;
+    }
 
-userController = {
-    getUsersPage: async (req, res) => {
+    getUsersPage = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const search = req.query.search || "";
         const limit = 10;
 
-        const [users, amountUsers, code] = await getNUsers(page, limit, search);
+        const [users, amountUsers, code] = await this.userService.getNUsers(page, limit, search);
         const totalPages = Math.ceil(amountUsers / limit) || 1;
 
         const flashMessage = req.session.flash;
         delete req.session.flash;
 
-        if(code === 200){
-            await logAction(req, 'USERS_List_VIEW', { page, search });
+        if (code === 200) {
+            await this.loggerService.logAction(req, 'USERS_List_VIEW', { page, search });
             res.render('pages/users', {
                 users,
                 totalPages,
@@ -22,18 +24,18 @@ userController = {
                 currentPage: page,
                 totalUsers: amountUsers,
                 flashMessage
-            })
+            });
         }
-        else{
+        else {
             res.redirect('/computer');
         }
-    },
+    };
 
-    getRegisterForm: (req, res) =>{
-        res.render('pages/add-user', {error: null});
-    },
+    getRegisterForm = (req, res) => {
+        res.render('pages/add-user', { error: null });
+    };
 
-    registerUser: async (req, res) => {
+    registerUser = async (req, res) => {
         try {
             const { pib, login, password, role } = req.body;
 
@@ -41,7 +43,7 @@ userController = {
                 return res.render('pages/add-user', { user: req.session.user, error: "Всі поля обов'язкові!" });
             }
 
-            const [newUser, status] = await registerUsr(pib, login, password, role);
+            const [newUser, status] = await this.userService.registerUsr(pib, login, password, role);
 
             if (status === 201) {
                 req.session.flash = { type: 'success', message: `Користувача ${login} створено!` };
@@ -56,15 +58,15 @@ userController = {
         } 
         catch (e) {
             console.error(e);
-            await logAction(req, 'USER_CREATE_ERROR', {
+            await this.loggerService.logAction(req, 'USER_CREATE_ERROR', {
                 loginAttempt: req.body.login,
                 error: e.message
             }, 'ERROR');
             res.render('pages/add-user', { user: req.session.user, error: "Помилка сервера при створенні." });
         }
-    },
+    };
 
-    getEditUserForm: async (req, res) => {
+    getEditUserForm = async (req, res) => {
         const userId = req.params.id;
         
         if (parseInt(userId) === req.session.user.id) {
@@ -72,7 +74,7 @@ userController = {
             return req.session.save(() => res.redirect('/user'));
         }
 
-        const userToEdit = await getUserById(userId);
+        const userToEdit = await this.userService.getUserById(userId);
         
         if (!userToEdit) {
             req.session.flash = { type: 'danger', message: 'Користувача не знайдено' };
@@ -80,31 +82,22 @@ userController = {
         }
 
         res.render('pages/edit-user', { user: req.session.user, userToEdit, error: null });
-    },
+    };
 
-    updateUser: async (req, res) => {
+    updateUser = async (req, res) => {
         try {
             const { id, pib, login, password, role } = req.body;
 
-            const roleToGroupMap = {
-                'DB_ADMIN': 'root',
-                'PROGRAMMER': 'development',
-                'OPERATOR': 'support',
-                'HARDWARE_SPECIALIST': 'hardware',
-                'USER': 'guest'
-            };
-            const accessGroup = roleToGroupMap[role] || 'guest';
+            let updateData = { pib, login, role, password };
 
-            let updateData = { pib, login, role, accessGroup, password };
-
-            const [updated, status] = await updateUser(id, updateData);
+            const [updated, status] = await this.userService.updateUser(id, updateData);
 
             if (status === 200) {
                 req.session.flash = { type: 'success', message: `Дані користувача ${login} оновлено.` };
                 req.session.save(() => res.redirect('/user'));
             } 
             else if (status === 409) {
-                const userToEdit = await getUserById(id); 
+                const userToEdit = await this.userService.getUserById(id); 
                 res.render('pages/edit-user', { user: req.session.user, userToEdit, error: "Такий логін вже зайнятий!" });
             } 
             else {
@@ -112,16 +105,16 @@ userController = {
             }
         } catch (e) {
             console.error(e);
-            await logAction(req, 'USER_UPDATE_ERROR', {
+            await this.loggerService.logAction(req, 'USER_UPDATE_ERROR', {
                 targetUserId: req.body.id,
                 error: e.message
             }, 'ERROR');
             req.session.flash = { type: 'danger', message: 'Помилка оновлення' };
             req.session.save(() => res.redirect('/user'));
         }
-    },
+    };
 
-    deleteUser: async (req, res) => {
+    deleteUser = async (req, res) => {
         const id = parseInt(req.params.id);
 
         if (id === req.session.user.id) {
@@ -129,7 +122,7 @@ userController = {
             return req.session.save(() => res.redirect('/user'));
         }
 
-        const status = await deleteUser(id);
+        const status = await this.userService.deleteUser(id);
 
         if (status === 200) {
             req.session.flash = { type: 'success', message: 'Користувача видалено.' };
@@ -138,7 +131,7 @@ userController = {
             req.session.flash = { type: 'danger', message: 'Не вдалося видалити користувача.' };
         }
         req.session.save(() => res.redirect('/user'));
-    }
-};
+    };
+}
 
-module.exports = userController;
+module.exports = UserController;

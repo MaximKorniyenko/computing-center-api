@@ -1,38 +1,16 @@
-const AuditLog = require('../models/AuditLog');
-const { logAction } = require('../services/loggerService');
+class LogsController {
+    constructor(loggerService) {
+        this.loggerService = loggerService;
+    }
 
-const logsController = {
-    getLogsPage: async (req, res) => {
+    getLogsPage = async (req, res) => {
         try {
             const page = parseInt(req.query.page) || 1;
             const limit = 20;
             const search = req.query.search || '';
             const level = req.query.level || 'all';
 
-            const query = {};
-
-            if (level !== 'all') {
-                query.level = level;
-            }
-
-            if (search) {
-                const searchRegex = new RegExp(search, 'i');
-                query.$or = [
-                    { action: searchRegex },
-                    { userName: searchRegex },
-                    { ip: searchRegex },
-                    { userRole: searchRegex }
-                ];
-            }
-
-            const totalLogs = await AuditLog.countDocuments(query);
-
-            const logs = await AuditLog.find(query)
-                .sort({ createdAt: -1 })
-                .skip((page - 1) * limit)
-                .limit(limit);
-
-            const totalPages = Math.ceil(totalLogs / limit) || 1;
+            const { logs, totalPages, totalLogs } = await this.loggerService.getLogsData(page, limit, search, level);
 
             const flashMessage = req.session.flash;
             delete req.session.flash;
@@ -54,23 +32,12 @@ const logsController = {
                 message: "Помилка при завантаженні логів. Перевірте з'єднання з MongoDB."
             });
         }
+    };
 
-
-    },
-
-    clearLogs: async (req, res) => {
+    clearLogs = async (req, res) => {
         try {
-            await AuditLog.deleteMany({});
-
-            await AuditLog.create({
-                action: 'LOGS_CLEARED',
-                level: 'CRITICAL',
-                ip: req.ip || req.connection.remoteAddress,
-                userId: req.session.user.id,
-                userRole: req.session.user.role,
-                userName: req.session.user.login,
-                details: { message: 'Адміністратор очистив історію подій' }
-            });
+            const ip = req.ip || req.connection.remoteAddress;
+            await this.loggerService.clearAuditLogs(req.session.user, ip);
 
             req.session.flash = { type: 'success', message: 'Журнал подій успішно очищено.' };
 
@@ -79,7 +46,7 @@ const logsController = {
             console.error('Clear Logs Error:', e);
             res.status(500).send("Помилка при очищенні логів");
         }
-    }
-};
+    };
+}
 
-module.exports = logsController;
+module.exports = LogsController;

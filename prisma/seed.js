@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const mongoose = require('mongoose');
 const ComputerDetails = require('../src/models/ComputerDetails');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const MONGO_URL = process.env.MONGO_URL
@@ -74,13 +75,14 @@ async function main() {
     await ComputerDetails.insertMany(mongoDocs);
     console.log(`Created ${mongoDocs.length} spec documents in MongoDB`);
 
-  const commonPassword = '123';
+  const commonPassword = await bcrypt.hash('123', 10);
+  const adminPassword = await bcrypt.hash('admin', 10);
 
   const usersData = [
     { 
       pib: 'Головний Адміністратор', 
       login: 'admin', 
-      password: 'admin',
+      password: adminPassword,
       role: 'DB_ADMIN', 
       accessGroup: 'root' 
     },

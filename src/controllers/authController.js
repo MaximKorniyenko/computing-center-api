@@ -1,23 +1,20 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { logAction } = require('../services/loggerService');
+class AuthController {
+    constructor(authService, loggerService) {
+        this.authService = authService;
+        this.loggerService = loggerService;
+    }
 
-const authController = {
-    login: async (req, res) => {
-        try{
-            const {login, password} = req.body;
+    login = async (req, res) => {
+        try {
+            const { login, password } = req.body;
 
-            if(!login || !password){
-                return res.render('pages/login', {error: 'Будь ласка, введіть логін та пароль'});
+            const authResult = await this.authService.authenticateUser(login, password);
+
+            if (authResult.error) {
+                return res.render('pages/login', { error: authResult.error });
             }
 
-            const user = await prisma.user.findUnique({
-                where: {login: login}
-            });
-
-            if(!user || user.password !== password){
-                return res.render('pages/login', {error: 'Невірний логін або пароль'});
-            }
+            const { user } = authResult;
 
             req.session.user = {
                 id: user.id,
@@ -26,40 +23,40 @@ const authController = {
                 login: user.login,
                 accessGroup: user.accessGroup
             };
+
             req.session.save(async (err) => {
-                if(err){
+                if (err) {
                     console.error('Session save error:', err);
-                    return res.render('pages/login', {error: 'Помилка сервера при створенні сесії користувача'});
+                    return res.render('pages/login', { error: 'Помилка сервера при створенні сесії користувача' });
                 }
-                await logAction(req, 'LOGIN_SUCCESS', { role: user.role });
+                await this.loggerService.logAction(req, 'LOGIN_SUCCESS', { role: user.role });
                 res.redirect('/computer'); 
             });
-        } catch(e){
+        } catch (e) {
             console.error('Login error:', e);
             try {
-                await logAction(req, 'AUTH_SYSTEM_ERROR', { error: e.message }, 'ERROR');
-            } catch(logErr) { console.error('Logger failed too:', logErr); }
-            res.render('pages/login', {error: 'Сталася критична помилка на сервері'});
+                await this.loggerService.logAction(req, 'AUTH_SYSTEM_ERROR', { error: e.message }, 'ERROR');
+            } catch (logErr) { console.error('Logger failed too:', logErr); }
+            res.render('pages/login', { error: 'Сталася критична помилка на сервері' });
         }
-    },
+    };
     
-    logout: async (req, res) => {
-        await logAction(req, 'LOGOUT');
+    logout = async (req, res) => {
+        await this.loggerService.logAction(req, 'LOGOUT');
         req.session.destroy((err) => {
-            if(err){
+            if (err) {
                 console.error('Logout error:', err);
                 return res.status(500).json({ message: 'Не вдалося вийти з системи' });
             }
 
             res.redirect('/computer');
         });
-    },
+    };
 
-    getLoginPage: (req, res) => {
-        if(req.session.user) return res.redirect('/computer');
-        res.render('pages/login', {error: null});
-    }
+    getLoginPage = (req, res) => {
+        if (req.session.user) return res.redirect('/computer');
+        res.render('pages/login', { error: null });
+    };
+}
 
-};
-
-module.exports = authController;
+module.exports = AuthController;

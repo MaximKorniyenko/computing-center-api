@@ -5,50 +5,51 @@ class AuthController {
     }
 
     login = async (req, res) => {
+        const { login, password } = req.body;
+
         try {
-            const { login, password } = req.body;
-
-            const authResult = await this.authService.authenticateUser(login, password);
-
-            if (authResult.error) {
-                return res.render('pages/login', { error: authResult.error });
+            if (!login || !password) {
+                return res.render('pages/login', { error: 'Будь ласка, введіть логін та пароль' });
             }
 
-            const { user } = authResult;
+            const user = await this.authService.authenticateUser(login, password);
+
+            const { id, pib, role, accessGroup } = user;
 
             req.session.user = {
-                id: user.id,
-                pib: user.pib,
-                role: user.role,
-                login: user.login,
-                accessGroup: user.accessGroup
+                id,
+                pib,
+                role,
+                login, // login ми вже мали з req.body
+                accessGroup
             };
 
             req.session.save(async (err) => {
-                if (err) {
-                    console.error('Session save error:', err);
-                    return res.render('pages/login', { error: 'Помилка сервера при створенні сесії користувача' });
-                }
+                if (err) throw new Error('SESSION_SAVE_ERROR');
+
                 await this.loggerService.logAction(req, 'LOGIN_SUCCESS', { role: user.role });
-                res.redirect('/computer'); 
+                res.redirect('/computer');
             });
+
         } catch (e) {
-            console.error('Login error:', e);
-            try {
-                await this.loggerService.logAction(req, 'AUTH_SYSTEM_ERROR', { error: e.message }, 'ERROR');
-            } catch (logErr) { console.error('Logger failed too:', logErr); }
-            res.render('pages/login', { error: 'Сталася критична помилка на сервері' });
-        }
-    };
-    
-    logout = async (req, res) => {
-        await this.loggerService.logAction(req, 'LOGOUT');
-        req.session.destroy((err) => {
-            if (err) {
-                console.error('Logout error:', err);
-                return res.status(500).json({ message: 'Не вдалося вийти з системи' });
+            let errorMessage = 'Сталася критична помилка на сервері';
+
+            if (e.message === 'INVALID_CREDENTIALS') {
+                errorMessage = 'Невірний логін або пароль';
             }
 
+            await this.loggerService.logAction(req, 'AUTH_ERROR', { error: e.message }, 'ERROR');
+            res.render('pages/login', { error: errorMessage });
+        }
+    };
+
+    logout = async (req, res) => {
+        await this.loggerService.logAction(req, 'LOGOUT');
+
+        req.session.destroy((err) => {
+            if (err) {
+                return res.status(500).json({ message: 'Не вдалося вийти з системи' });
+            }
             res.redirect('/computer');
         });
     };

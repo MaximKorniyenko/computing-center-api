@@ -1,29 +1,18 @@
-const bcrypt = require('bcrypt');
+const { comparePasswords } = require('../utils/passwordHasher');
 
 class AuthService {
-    constructor(prisma) {
-        this.prisma = prisma;
+    constructor(userRepository) {
+        this.userRepository = userRepository;
     }
 
     async authenticateUser(login, password) {
-        if (!login || !password) {
-            return { error: 'Будь ласка, введіть логін та пароль' };
+        const user = await this.userRepository.findByLogin(login);
+
+        if (!user || !(await comparePasswords(password, user.password))) {
+            throw new Error('INVALID_CREDENTIALS');
         }
 
-        try {
-            const user = await this.prisma.user.findUnique({
-                where: { login: login }
-            });
-
-            if (!user || !(await bcrypt.compare(password, user.password))) {
-                return { error: 'Невірний логін або пароль' };
-            }
-
-            return { user };
-        } catch (e) {
-            console.error('Authentication error:', e);
-            throw e;
-        }
+        return user;
     }
 }
 

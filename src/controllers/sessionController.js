@@ -1,71 +1,69 @@
+// controllers/SessionController.js
 class SessionController {
-    constructor(sessionService, loggerService) {
+    constructor(sessionService, logger) {
         this.sessionService = sessionService;
-        this.loggerService = loggerService;
+        this.logger = logger;
     }
 
-    startSessionController = async (req, res) => {
-        const { computerId } = req.body;
-        const userId = req.session.user ? req.session.user.id : null;
-        const [code, jsonRes] = await this.sessionService.startSession(userId, computerId);
-        if (code === 201) {
-            await this.loggerService.logAction(req, 'SESSION_START', { computerId });
-            return res.redirect('/computer'); 
-        } else {
-            req.session.flash = { type: 'error', message: `Спочатку завершіть сеанс за іншим комп'ютером!` }
-            return req.session.save(() => res.redirect('/computer'));
+    startSession = async (req, res) => {
+        try {
+            const userId = req.session.user?.id;
+            const { computerId } = req.body;
+
+            await this.sessionService.startSession(userId, computerId);
+            await this.logger.logAction(req, 'SESSION_START', { computerId });
+
+            res.redirect('/computer');
+        } catch (e) {
+            let msg = "Помилка при старті сесії";
+            if (e.message === 'ALREADY_HAS_SESSION') msg = "Спочатку завершіть стару сесію!";
+            if (e.message === 'COMPUTER_NOT_AVAILABLE') msg = "Комп'ютер вже зайнятий.";
+
+            req.session.flash = { type: 'error', message: msg };
+            req.session.save(() => res.redirect('/computer'));
         }
     };
 
-    endSessionController = async (req, res) => {
-        const { computerId } = req.body;
-        console.log(computerId);
-        const userId = req.session.user ? req.session.user.id : null;
-        const [code, jsonRes] = await this.sessionService.endSession(userId);
-        if (code === 200) {
-            await this.loggerService.logAction(req, 'SESSION_END', { computerId });
-            return res.redirect('/computer'); 
-        } else {
-            return res.status(code).send(jsonRes.error);
+    endSession = async (req, res) => {
+        try {
+            const userId = req.session.user?.id;
+            await this.sessionService.endSession(userId);
+            await this.logger.logAction(req, 'SESSION_END');
+            res.redirect('/computer');
+        } catch (e) {
+            res.status(400).send(e.message);
         }
     };
 
-    adminStopSessionController = async (req, res) => {
-        const { computerId } = req.body; 
-        
-        const [code, result] = await this.sessionService.forceStopSession(computerId);
-
-        if (code === 200) {
-            await this.loggerService.logAction(req, 'SESSION_FORCE_STOP', { computerId }, 'WARNING');
-            return res.redirect('/computer'); 
-        } else {
-            return res.status(code).send(result.error);
+    adminStopSession = async (req, res) => {
+        try {
+            const { computerId } = req.body;
+            await this.sessionService.forceStop(computerId);
+            await this.logger.logAction(req, 'SESSION_FORCE_STOP', { computerId }, 'WARNING');
+            res.redirect('/computer');
+        } catch (e) {
+            res.status(400).send(e.message);
         }
     };
 
     getSessionsPage = async (req, res) => {
-        const limit = 10;
-        const page = parseInt(req.query.page) || 1;
-        const search = req.query.search || '';
-        const status = req.query.status || 'all';
+        try {
+            const { page = 1, search = '', status = 'all' } = req.query;
+            const limit = 10;
 
-        const [sessions, count, code] = await this.sessionService.getSessions(page, limit, search, status);
-        const totalPages = Math.ceil(count / limit) || 1;
+            const { sessions, count } = await this.sessionService.getSessionsData(Number(page), limit, search, status);
 
-        if (code === 200) {
             res.render('pages/sessions', {
-                sessions,  
-                totalPages,
+                sessions,
+                totalPages: Math.ceil(count / limit) || 1,
                 totalSessions: count,
                 search,
                 status,
-                currentPage: page
+                currentPage: Number(page),
+                user: req.session.user
             });
-        }
-        else {
+        } catch (e) {
             res.redirect('/session');
         }
     };
 }
-
-module.exports = SessionController;

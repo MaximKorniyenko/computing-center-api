@@ -6,47 +6,37 @@ class LogsController {
     getLogsPage = async (req, res) => {
         try {
             const page = parseInt(req.query.page) || 1;
-            const limit = 20;
             const search = req.query.search || '';
             const level = req.query.level || 'all';
+            const limit = 20;
 
-            const { logs, totalPages, totalLogs } = await this.loggerService.getLogsData(page, limit, search, level);
-
-            const flashMessage = req.session.flash;
-            delete req.session.flash;
+            const data = await this.loggerService.getLogsData(page, limit, search, level);
 
             res.render('pages/logs', {
-                logs,
+                ...data,
                 currentPage: page,
-                totalPages,
-                totalLogs,
                 search,
                 level,
                 user: req.session.user,
-                flashMessage
+                flashMessage: req.session.flash
             });
-
+            delete req.session.flash;
         } catch (e) {
             console.error('Logs Page Error:', e);
-            res.status(500).render('pages/error', {
-                message: "Помилка при завантаженні логів. Перевірте з'єднання з MongoDB."
-            });
+            res.status(500).render('pages/error', { message: "Помилка бази даних." });
         }
     };
 
     clearLogs = async (req, res) => {
         try {
             const ip = req.ip || req.connection.remoteAddress;
-            await this.loggerService.clearAuditLogs(req.session.user, ip);
+            await this.loggerService.clearAllLogs(req.session.user, ip);
 
-            req.session.flash = { type: 'success', message: 'Журнал подій успішно очищено.' };
-
+            req.session.flash = { type: 'success', message: 'Журнал подій очищено.' };
             res.redirect('/logs');
         } catch (e) {
-            console.error('Clear Logs Error:', e);
-            res.status(500).send("Помилка при очищенні логів");
+            console.error('Помилка при очищенні логів:', e);
+            res.status(500).send("Помилка при очищенні.");
         }
     };
 }
-
-module.exports = LogsController;

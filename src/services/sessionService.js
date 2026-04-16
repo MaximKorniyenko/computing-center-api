@@ -1,169 +1,69 @@
 class SessionService {
-    constructor(prisma, redisClient) {
+    constructor(sessionRepo, computerRepo, prisma, redis) {
+        this.sessionRepo = sessionRepo;
+        this.computerRepo = computerRepo;
         this.prisma = prisma;
-        this.redisClient = redisClient;
+        this.redis = redis;
     }
 
     async startSession(userId, computerId) {
-        try {
-            if (userId === null) {
-                throw new Error('Користувач не авторизований!');
-            }
+        if (!userId) throw new Error('UNAUTHORIZED');
 
-            const result = await this.prisma.$transaction(async (tx) => {
-                const existingSession = await tx.session.findFirst({
-                    where: {
-                        userId: parseInt(userId),
-                        endTime: null
-                    },
-                    include: {
-                        computer: true
-                    }
-                });
+        return await this.prisma.$transaction(async (tx) => {
+            const active = await this.sessionRepo.findActiveByUserId(userId);
+            if (active) throw new Error('ALREADY_HAS_SESSION');
 
-                if (existingSession) {
-                    throw new Error(`Ви вже працюєте за комп'ютером ${existingSession.computerId}! Спочатку завершіть стару сесію.`);
-                }
+            const pc = await this.computerRepo.findById(computerId);
+            if (!pc || pc.status !== "AVAILABLE") throw new Error('COMPUTER_NOT_AVAILABLE');
 
-                const computer = await tx.computer.findUnique({
-                    where: { id: parseInt(computerId) }
-                });
-
-                if (!computer || computer.status !== "AVAILABLE") {
-                    throw new Error('Комп\'ютер зайнятий або не існує!');
-                }
-
-                const newSession = await tx.session.create({
-                    data: {
-                        userId: parseInt(userId),
-                        computerId: parseInt(computerId),
-                        startTime: new Date()
-                    }
-                });
-
-                await tx.computer.update({
-                    where: { id: parseInt(computerId) },
-                    data: { status: "BUSY" }
-                });
-
-                return newSession;
+            const session = await this.sessionRepo.createSession(tx, {
+                userId: parseInt(userId),
+                computerId: parseInt(computerId),
+                startTime: new Date()
             });
-            await this.redisClient.del('computers:dashboard_list');
-            return [201, result];
-        } catch (e) {
-            console.error(e);
-            return [400, { error: e.message }];
-        }
+
+            await this.computerRepo.updateStatus(tx, computerId, "BUSY");
+            await this.redis.del('computers:dashboard_list');
+            return session;
+        });
     }
 
     async endSession(userId) {
-        try {
-            const result = await this.prisma.$transaction(async (tx) => {
-                const activeSession = await tx.session.findFirst({
-                    where: { userId: parseInt(userId), endTime: null }
-                });
+        return await this.prisma.$transaction(async (tx) => {
+            const active = await this.sessionRepo.findActiveByUserId(userId);
+            if (!active) throw new Error('NO_ACTIVE_SESSION');
 
-                if (!activeSession) {
-                    throw new Error("В цього користувача немає відкритої сесії!");
-                }
-
-                const updatedSession = await tx.session.update({
-                    where: { id: activeSession.id },
-                    data: { endTime: new Date() }
-                });
-
-                await tx.computer.update({
-                    where: { id: activeSession.computerId },
-                    data: { status: "AVAILABLE" }
-                });
-
-                return activeSession;
-            });
-            await this.redisClient.del('computers:dashboard_list');
-            return [200, result];
-        } catch (e) {
-            console.error(e);
-            return [400, { error: e.message }];
-        }
+            await this.sessionRepo.closeSession(tx, active.id);
+            await this.computerRepo.updateStatus(tx, active.computerId, "AVAILABLE");
+            await this.redis.del('computers:dashboard_list');
+            return active;
+        });
     }
 
-    async forceStopSession(computerId) {
-        try {
-            const result = await this.prisma.$transaction(async (tx) => {
-                const activeSession = await tx.session.findFirst({
-                    where: {
-                        computerId: parseInt(computerId),
-                        endTime: null
-                    }
-                });
+    async forceStop(computerId) {
+        return await this.prisma.$transaction(async (tx) => {
+            const active = await this.sessionRepo.findActiveByComputerId(computerId);
+            if (!active) throw new Error('NO_SESSION_ON_PC');
 
-                if (!activeSession) {
-                    throw new Error("На цьому комп'ютері немає активної сесії!");
-                }
-
-                const updatedSession = await tx.session.update({
-                    where: { id: activeSession.id },
-                    data: { endTime: new Date() }
-                });
-
-                await tx.computer.update({
-                    where: { id: parseInt(computerId) },
-                    data: { status: "AVAILABLE" }
-                });
-
-                return updatedSession;
-            });
-            await this.redisClient.del('computers:dashboard_list');
-            return [200, result];
-        } catch (e) {
-            console.error("Force Stop Error:", e);
-            return [400, { error: e.message }];
-        }
+            await this.sessionRepo.closeSession(tx, active.id);
+            await this.computerRepo.updateStatus(tx, computerId, "AVAILABLE");
+            await this.redis.del('computers:dashboard_list');
+        });
     }
 
-    async getSessions(page, limit, search, status) {
-        try {
-            const offset = (page - 1) * limit;
-            const searchCondition = search ? {
+    async getSessionsData(page, limit, search, status) {
+        const where = {
+            ...(status === 'active' && { endTime: null }),
+            ...(status === 'finished' && { endTime: { not: null } }),
+            ...(search && {
                 OR: [
                     { user: { pib: { contains: search, mode: 'insensitive' } } },
-                    { user: { login: { contains: search, mode: 'insensitive' } } },
-                    { computer: { inventoryNumber: { contains: search, mode: 'insensitive' } } },
-                    { computer: { location: { contains: search, mode: 'insensitive' } } }
+                    { computer: { inventoryNumber: { contains: search, mode: 'insensitive' } } }
                 ]
-            } : {};
+            })
+        };
 
-            let statusCondition = {};
-            if (status === 'active') {
-                statusCondition = { endTime: null };
-            } else if (status === 'finished') {
-                statusCondition = { endTime: { not: null } };
-            }
-
-            const whereClause = {
-                ...searchCondition,
-                ...statusCondition
-            };
-
-            const [sessions, count] = await this.prisma.$transaction(async (tx) => {
-                const gotSessions = await tx.session.findMany({
-                    where: whereClause,
-                    take: limit,
-                    skip: offset,
-                    orderBy: { startTime: "desc" },
-                    include: { user: true, computer: true }
-                });
-
-                const counter = await tx.session.count({ where: whereClause });
-                return [gotSessions, counter];
-            });
-
-            return [sessions, count, 200];
-        } catch (e) {
-            console.log('Error in getting sessions!', e.message);
-            return [[], 0, 500];
-        }
+        const [sessions, count] = await this.sessionRepo.getPaginated(where, (page - 1) * limit, limit);
+        return { sessions, count };
     }
 }
-
-module.exports = SessionService;

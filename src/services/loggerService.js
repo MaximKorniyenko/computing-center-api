@@ -1,24 +1,22 @@
+// services/LoggerService.js
 class LoggerService {
-    constructor(AuditLog) {
-        this.AuditLog = AuditLog;
+    constructor(logRepository) {
+        this.logRepository = logRepository;
     }
 
-    async logAction(req, action, details = {}, level = 'INFO') {
+    async logAction(actionData) {
         try {
-            const user = req.session?.user || null;
-
             const logEntry = {
-                action,
-                level,
-                ip: req.ip || req.connection.remoteAddress,
-                details: details,
-                userId: user ? user.id : null,
-                userRole: user ? user.role : 'GUEST',
-                userName: user ? `${user.login} (${user.pib})` : 'Unauthenticated'
+                action: actionData.action,
+                level: actionData.level || 'INFO',
+                ip: actionData.ip,
+                details: actionData.details || {},
+                userId: actionData.userId,
+                userRole: actionData.userRole || 'GUEST',
+                userName: actionData.userName || 'Unauthenticated'
             };
 
-            await this.AuditLog.create(logEntry);
-            console.log(`LOG [${action}]: saved to Mongo`); //прибрати
+            await this.logRepository.create(logEntry);
         } catch (err) {
             console.error('Logger Service Error:', err.message);
         }
@@ -26,43 +24,32 @@ class LoggerService {
 
     async getLogsData(page, limit, search, level) {
         const query = {};
-
-        if (level !== 'all') {
-            query.level = level;
-        }
+        if (level !== 'all') query.level = level;
 
         if (search) {
             const searchRegex = new RegExp(search, 'i');
             query.$or = [
-                { action: searchRegex },
-                { userName: searchRegex },
-                { ip: searchRegex },
-                { userRole: searchRegex }
+                { action: searchRegex }, { userName: searchRegex },
+                { ip: searchRegex }, { userRole: searchRegex }
             ];
         }
 
-        const totalLogs = await this.AuditLog.countDocuments(query);
+        const { logs, total } = await this.logRepository.findPaginated(query, page, limit);
+        const totalPages = Math.ceil(total / limit) || 1;
 
-        const logs = await this.AuditLog.find(query)
-            .sort({ createdAt: -1 })
-            .skip((page - 1) * limit)
-            .limit(limit);
-
-        const totalPages = Math.ceil(totalLogs / limit) || 1;
-
-        return { logs, totalPages, totalLogs };
+        return { logs, totalPages, totalLogs: total };
     }
 
-    async clearAuditLogs(user, ip) {
-        await this.AuditLog.deleteMany({});
+    async clearAllLogs(adminUser, ip) {
+        await this.logRepository.deleteAll();
 
-        await this.AuditLog.create({
+        await this.logAction({
             action: 'LOGS_CLEARED',
             level: 'CRITICAL',
             ip: ip,
-            userId: user.id,
-            userRole: user.role,
-            userName: user.login,
+            userId: adminUser.id,
+            userRole: adminUser.role,
+            userName: adminUser.login,
             details: { message: 'Адміністратор очистив історію подій' }
         });
     }

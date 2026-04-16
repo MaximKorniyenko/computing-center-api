@@ -1,84 +1,57 @@
-class ReportService {
-    constructor(prisma) {
-        this.prisma = prisma;
-    }
+const TimeFormatter = require('../utils/timeFormatter');
 
-    formatDuration(ms) {
-        const totalMinutes = Math.floor(ms / 60000);
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        return `${hours} год ${minutes} хв`;
+class ReportService {
+    constructor(sessionRepository) {
+        this.sessionRepository = sessionRepository;
     }
 
     async getDailyReport(dateString, page = 1, limit = 10) {
-        try {
-            const date = dateString ? new Date(dateString) : new Date();
-            const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-            const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+        const date = dateString ? new Date(dateString) : new Date();
+        const startOfDay = new Date(new Date(date).setHours(0, 0, 0, 0));
+        const endOfDay = new Date(new Date(date).setHours(23, 59, 59, 999));
 
-            const sessions = await this.prisma.session.findMany({
-                where: {
-                    startTime: {
-                        gte: startOfDay,
-                        lte: endOfDay
-                    }
-                },
-                include: { user: true }
-            });
+        const sessions = await this.sessionRepository.findByDateRange(startOfDay, endOfDay);
 
-            const userStats = {};
-            let totalSessionsCount = 0;
+        const userStats = this._aggregateUserStats(sessions);
+        const reportData = Object.values(userStats).sort((a, b) => b.totalMs - a.totalMs);
 
-            sessions.forEach(session => {
-                totalSessionsCount++;
-                
-                if (session.user.deletedAt) return; 
+        const totalUsers = reportData.length;
+        const offset = (page - 1) * limit;
+        const paginatedData = reportData.slice(offset, offset + limit).map(item => ({
+            ...item,
+            formattedTime: TimeFormatter.formatDuration(item.totalMs)
+        }));
 
-                const userId = session.user.id;
-                
-                if (!userStats[userId]) {
-                    userStats[userId] = {
-                        user: session.user,
-                        totalMs: 0,
-                        sessionsCount: 0
-                    };
-                }
+        return {
+            date: startOfDay,
+            totalSessionsCount: sessions.length,
+            reportData: paginatedData,
+            totalPages: Math.ceil(totalUsers / limit) || 1,
+            currentPage: page,
+            totalUsers
+        };
+    }
 
-                let duration = 0;
-                if (session.endTime) {
-                    duration = new Date(session.endTime) - new Date(session.startTime);
-                } else {
-                    duration = new Date() - new Date(session.startTime);
-                }
+    _aggregateUserStats(sessions) {
+        const stats = {};
+        const now = new Date();
 
-                userStats[userId].totalMs += duration;
-                userStats[userId].sessionsCount += 1;
-            });
+        sessions.forEach(session => {
+            if (session.user.deletedAt) return;
 
-            const reportData = Object.values(userStats).sort((a, b) => b.totalMs - a.totalMs);
+            const userId = session.user.id;
+            if (!stats[userId]) {
+                stats[userId] = { user: session.user, totalMs: 0, sessionsCount: 0 };
+            }
 
-            const totalUsers = reportData.length;
-            const totalPages = Math.ceil(totalUsers / limit) || 1;
-            const offset = (page - 1) * limit;
-            
-            const paginatedData = reportData.slice(offset, offset + limit).map(item => ({
-                ...item,
-                formattedTime: this.formatDuration(item.totalMs)
-            }));
+            const endTime = session.endTime ? new Date(session.endTime) : now;
+            const duration = endTime - new Date(session.startTime);
 
-            return {
-                date: startOfDay,
-                totalSessionsCount,
-                reportData: paginatedData,
-                totalPages,
-                currentPage: page,
-                totalUsers
-            };
+            stats[userId].totalMs += duration;
+            stats[userId].sessionsCount += 1;
+        });
 
-        } catch (e) {
-            console.error("Report error:", e);
-            throw e;
-        }
+        return stats;
     }
 }
 

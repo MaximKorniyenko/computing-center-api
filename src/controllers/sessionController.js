@@ -1,8 +1,9 @@
-// controllers/SessionController.js
-class SessionController {
+const BaseController = require('./BaseController');
+
+class SessionController extends BaseController{
     constructor(sessionService, logger) {
+        super(logger);
         this.sessionService = sessionService;
-        this.logger = logger;
     }
 
     startSession = async (req, res) => {
@@ -11,7 +12,7 @@ class SessionController {
             const { computerId } = req.body;
 
             await this.sessionService.startSession(userId, computerId);
-            await this.logger.logAction(req, 'SESSION_START', { computerId });
+            await this.log(req, 'SESSION_START', { computerId });
 
             res.redirect('/computer');
         } catch (e) {
@@ -28,7 +29,7 @@ class SessionController {
         try {
             const userId = req.session.user?.id;
             await this.sessionService.endSession(userId);
-            await this.logger.logAction(req, 'SESSION_END');
+            await this.log(req, 'SESSION_END');
             res.redirect('/computer');
         } catch (e) {
             res.status(400).send(e.message);
@@ -39,7 +40,7 @@ class SessionController {
         try {
             const { computerId } = req.body;
             await this.sessionService.forceStop(computerId);
-            await this.logger.logAction(req, 'SESSION_FORCE_STOP', { computerId }, 'WARNING');
+            await this.log(req, 'SESSION_FORCE_STOP', { computerId }, 'WARNING');
             res.redirect('/computer');
         } catch (e) {
             res.status(400).send(e.message);
@@ -63,7 +64,10 @@ class SessionController {
                 user: req.session.user
             });
         } catch (e) {
+            console.error('Sessions Page Error:', e);
             res.redirect('/session');
         }
     };
 }
+
+module.exports = SessionController;

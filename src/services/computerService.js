@@ -16,12 +16,15 @@ class ComputerService {
         }
 
         const computers = await this.computerRepo.findAllActive(search, status);
-
         const computerIds = computers.map(pc => pc.id);
-        const specsDocs = await this.detailsRepo.findByComputerIds(computerIds);
 
+        const specsDocs = await this.detailsRepo.findByComputerIds(computerIds);
         const specsMap = new Map(specsDocs.map(d => [d.computerId, d.specs]));
-        const enriched = computers.map(pc => ({ ...pc, specs: specsMap.get(pc.id) || null }));
+
+        const enriched = computers.map(pc => ({
+            ...pc,
+            specs: specsMap.get(pc.id) || null
+        }));
 
         if (isCacheable && enriched.length > 0) {
             await this.redis.setEx(CACHE_KEY, 60, JSON.stringify(enriched));
@@ -32,9 +35,12 @@ class ComputerService {
 
     async createComputer(data) {
         const { inventoryNumber, location, cpu, ram, gpu, storage } = data;
+        if (!inventoryNumber || !location) throw new Error("Інвентарний номер та локація обов'язкові!");
 
         const newPC = await this.computerRepo.create({
-            inventoryNumber, location, status: "AVAILABLE"
+            inventoryNumber,
+            location,
+            status: "AVAILABLE"
         });
 
         await this.detailsRepo.create(newPC.id, {
@@ -46,6 +52,15 @@ class ComputerService {
 
         await this.redis.del('computers:dashboard_list');
         return newPC;
+    }
+
+    async setMaintenanceStatus(id, statusToSet) {
+        const validStatuses = ['AVAILABLE', 'MAINTENANCE'];
+        if (!validStatuses.includes(statusToSet)) throw new Error("Invalid status");
+
+        const updated = await this.computerRepo.update(id, { status: statusToSet });
+        await this.redis.del('computers:dashboard_list');
+        return updated;
     }
 
     async archiveComputer(id) {
@@ -62,5 +77,8 @@ class ComputerService {
         });
 
         await this.redis.del('computers:dashboard_list');
+        return pc.inventoryNumber;
     }
 }
+
+module.exports = ComputerService;

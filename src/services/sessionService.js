@@ -6,6 +6,14 @@ class SessionService {
         this.redis = redis;
     }
 
+    async getActiveSessionComputerId(userId) {
+        if (!userId) return null;
+
+        const activeSession = await this.sessionRepo.findActiveByUserId(userId);
+
+        return activeSession ? activeSession.computerId : null;
+    }
+
     async startSession(userId, computerId) {
         if (!userId) throw new Error('UNAUTHORIZED');
 
@@ -14,11 +22,11 @@ class SessionService {
             if (active) throw new Error('ALREADY_HAS_SESSION');
 
             const pc = await this.computerRepo.findById(computerId);
-            if (!pc || pc.status !== "AVAILABLE") throw new Error('COMPUTER_NOT_AVAILABLE');
+            if (pc?.status !== "AVAILABLE") throw new Error('COMPUTER_NOT_AVAILABLE');
 
             const session = await this.sessionRepo.createSession(tx, {
-                userId: parseInt(userId),
-                computerId: parseInt(computerId),
+                userId: Number.parseInt(userId),
+                computerId: Number.parseInt(computerId),
                 startTime: new Date()
             });
 
@@ -67,3 +75,5 @@ class SessionService {
         return { sessions, count };
     }
 }
+
+module.exports = SessionService;

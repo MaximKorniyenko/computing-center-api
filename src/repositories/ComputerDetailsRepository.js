@@ -9,3 +9,5 @@ class ComputerDetailsRepository {
         return await this.Model.create({ computerId, specs });
     }
 }
+
+module.exports = ComputerDetailsRepository;

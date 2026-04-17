@@ -1,4 +1,5 @@
-const { getAccessGroup, hashPassword } = require('../utils/accessMapper');
+const { getAccessGroup } = require('../utils/accessMapper');
+const { hashPassword } = require('../utils/passwordHasher');
 
 class UserService {
     constructor(userRepository) {
@@ -19,6 +20,10 @@ class UserService {
         });
     }
 
+    async getUserById(id) {
+        return await this.userRepository.findById(id);
+    }
+
     async updateUser(id, data) {
         const updateData = { ...data };
         if (data.role) updateData.accessGroup = getAccessGroup(data.role);
@@ -37,3 +42,5 @@ class UserService {
         });
     }
 }
+
+module.exports = UserService;

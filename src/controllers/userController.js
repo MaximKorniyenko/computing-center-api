@@ -1,7 +1,9 @@
-class UserController {
+const BaseController = require('./BaseController');
+
+class UserController extends BaseController{
     constructor(userService, loggerService) {
+        super(loggerService);
         this.userService = userService;
-        this.loggerService = loggerService;
     }
     getUsersPage = async (req, res) => {
         try {
@@ -15,7 +17,7 @@ class UserController {
             const flashMessage = req.session.flash;
             delete req.session.flash;
 
-            await this.loggerService.logAction(req, 'USERS_LIST_VIEW', { page, search });
+            await this.log(req, 'USERS_LIST_VIEW', { page, search });
 
             res.render('pages/users', {
                 users,
@@ -64,7 +66,7 @@ class UserController {
                 });
             }
 
-            await this.loggerService.logAction(req, 'USER_CREATE_ERROR', {
+            await this.log(req, 'USER_CREATE_ERROR', {
                 loginAttempt: login,
                 error: e.message
             }, 'ERROR');
@@ -116,6 +118,11 @@ class UserController {
 
             await this.userService.updateUser(id, updateData);
 
+            await this.log(req, 'USER_CREATE_SUCCESS', {
+                createdUserId: newUser.id,
+                login: newUser.login
+            });
+
             req.session.flash = {
                 type: 'success',
                 message: `Дані користувача ${login} оновлено.`
@@ -132,7 +139,7 @@ class UserController {
                 });
             }
 
-            await this.loggerService.logAction(req, 'USER_UPDATE_ERROR', {
+            await this.log(req, 'USER_UPDATE_ERROR', {
                 targetUserId: id,
                 error: e.message
             }, 'ERROR');
@@ -145,6 +152,7 @@ class UserController {
     deleteUser = async (req, res) => {
         try {
             const id = parseInt(req.params.id);
+            if (isNaN(id)) throw new Error('INVALID_ID');
 
             if (id === req.session.user.id) {
                 req.session.flash = { type: 'danger', message: 'Ви не можете видалити самі себе!' };

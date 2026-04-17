@@ -1,7 +1,9 @@
-class AuthController {
+const BaseController = require('./BaseController');
+
+class AuthController extends BaseController{
     constructor(authService, loggerService) {
+        super(loggerService);
         this.authService = authService;
-        this.loggerService = loggerService;
     }
 
     login = async (req, res) => {
@@ -20,14 +22,17 @@ class AuthController {
                 id,
                 pib,
                 role,
-                login, // login ми вже мали з req.body
+                login,
                 accessGroup
             };
 
             req.session.save(async (err) => {
-                if (err) throw new Error('SESSION_SAVE_ERROR');
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.render('pages/login', { error: 'Помилка збереження сесії' });
+                }
 
-                await this.loggerService.logAction(req, 'LOGIN_SUCCESS', { role: user.role });
+                await this.log(req, 'LOGIN_SUCCESS', { role: user.role });
                 res.redirect('/computer');
             });
 
@@ -38,13 +43,13 @@ class AuthController {
                 errorMessage = 'Невірний логін або пароль';
             }
 
-            await this.loggerService.logAction(req, 'AUTH_ERROR', { error: e.message }, 'ERROR');
+            await this.log(req, 'AUTH_ERROR', { error: e.message }, 'ERROR');
             res.render('pages/login', { error: errorMessage });
         }
     };
 
     logout = async (req, res) => {
-        await this.loggerService.logAction(req, 'LOGOUT');
+        await this.log(req, 'LOGOUT');
 
         req.session.destroy((err) => {
             if (err) {

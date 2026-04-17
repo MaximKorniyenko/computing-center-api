@@ -1,7 +1,9 @@
-class ReportController {
+const BaseController = require('./BaseController');
+
+class ReportController extends BaseController{
     constructor(reportService, loggerService) {
+        super(loggerService);
         this.reportService = reportService;
-        this.loggerService = loggerService;
     }
 
     getReportPage = async (req, res) => {
@@ -9,7 +11,7 @@ class ReportController {
         const page = parseInt(req.query.page) || 1;
 
         try {
-            await this.loggerService.logAction(req, 'REPORT_VIEW', { reportDate: date, page });
+            await this.log(req, 'REPORT_VIEW', { reportDate: date, page });
 
             const stats = await this.reportService.getDailyReport(date, page, 10);
 

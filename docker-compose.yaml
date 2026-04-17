@@ -2,7 +2,7 @@ version: '3.9'
 services:
   postgres:
     image: postgres:16
-    container_name: computing_center_db
+    container_name: computing_center_db_korniienko
     restart: always
     environment:
       POSTGRES_USER: admin
@@ -15,14 +15,14 @@ services:
 
   redis:
     image: redis
-    container_name: computing_center_redis
+    container_name: computing_center_redis_korniienko
     restart: always
     ports:
       - "6379:6379"
   
   mongo:
     image: mongo:6.0
-    container_name: computing_center_mongo
+    container_name: computing_center_mongo_korniienko
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -34,7 +34,7 @@ services:
 
   app:
     build: .
-    container_name: computing_center_api
+    container_name: computing_center_api_korniienko
     restart: on-failure
     ports:
       - "3000:3000"
